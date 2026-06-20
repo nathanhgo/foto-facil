@@ -1,0 +1,28 @@
+# Logs de Alterações
+
+- **2026-06-20:** Arquivos iniciais de arquitetura e planejamento criados (`questions.md`, `general_architecture.md`, `logs.md`, `tests.md`, `visual.md`).
+- **2026-06-20:** Criado documento `mvp.md` com as fases de desenvolvimento e ambiente. Documento `idea.md` atualizado com novos nós de IA e Comparação Visual com base nas decisões.
+- **2026-06-20:** Adicionada árvore de diretórios e definição das variáveis de ambiente (`.env`) no arquivo `mvp.md`.
+- **2026-06-20:** Inicializados diretórios, `.vscode/tasks.json` e `.env` real na raiz do projeto.
+- **2026-06-20:** Backend Golang inicializado via `go mod init`. Criada suíte de testes TDD (`scheduler_test.go`) para a resolução de dependências topológicas e prevenção de ciclos no DAG. Implementação inicial de `scheduler.go` validada com sucesso nos testes.
+- **2026-06-20:** Frontend React/TypeScript inicializado via Vite (template clonado com sucesso) e instaladas dependências do Electron (`electron`, `vite-plugin-electron`).
+- **2026-06-20:** Backend recebeu as dependências primárias para WebSocket (`gorilla/websocket`) e banco de dados SQLite (`go-sqlite3`).
+- **2026-06-20:** No Backend (Golang), implementados manipuladores de `WebSocket` para receber conexões da interface, e implementada estrutura TDD do banco de dados `SQLite` para persistência de fluxos em formato JSON (`storage.go` e `storage_test.go`).
+- **2026-06-20:** Testes gerais do backend foram executados com sucesso (100% de aprovação no motor DAG e Storage).
+- **2026-06-20:** No Frontend (React), implementado o ecossistema visual do Canvas utilizando `@xyflow/react` e o sistema de design utilizando `Tailwind CSS`. Layout Dark Mode base com painéis laterais de propriedades e biblioteca de nós criado para a Fase 1.
+- **2026-06-20:** No Backend (Golang), desenvolvida a interface unificada de Nós (`Node`) e o contexto de processamento em lote (`ProcessContext`). Implementados os processadores matemáticos de `Image Input` (leitura em lote) e `Brightness & Contrast` (manipulação de pixels), com 100% de cobertura nos testes via TDD em `node_test.go`.
+- **2026-06-20:** No Backend (Golang), criado o `OutputNode` usando as bibliotecas internas `image/jpeg` para permitir que o fluxo descarregue os arquivos físicos na pasta solicitada. 100% testado e funcional.
+- **2026-06-20:** No Frontend (React/Electron), implementada a funcionalidade interativa de `Drag and Drop` (DnD) da Biblioteca de Nós para dentro do Canvas do ReactFlow, emulando uma experiência nativa. Lógica de conectar "fios" entre eles também habilitada.
+- **2026-06-20:** Backend: adicionados nós `GrayscaleNode` (fórmula de luminância perceptual) e `ThumbnailNode` (redimensionamento proporcional + base64 JPEG). Todos testados via TDD (9/9 testes passando).
+- **2026-06-20:** Backend: `websocket.go` atualizado para orquestrar toda a pipeline DAG → Nós → Thumbnails e retornar os previews base64 ao front após cada execução. Adicionado suporte a `Color Space`.
+- **2026-06-20:** Frontend: `electron/main.ts` atualizado com `contextIsolation: true` e handlers IPC (`dialog:openFile`, `dialog:openDirectory`). `preload.ts` expõe `electronAPI` via `contextBridge`. `App.tsx` usa file/folder pickers nativos do SO nos nós de Input/Output.
+- **2026-06-20:** Backend: adicionados `CropResizeNode` (nearest-neighbor + recorte de região) e `RotateFlipNode` (rotação 90/180/270 + flip H/V/ambos) com TDD completo (13/13 testes passando).
+- **2026-06-20:** Backend: `InputNode` corrigido — agora lê arquivos reais do disco com `image.Decode` (JPEG, PNG, GIF, BMP, TIFF, WebP via `golang.org/x/image`). Teste TDD atualizado para criar arquivo JPEG temporário real.
+- **2026-06-20:** Backend: `CompareNode` corrigido para utilizar o buffer `OriginalImages` preservado no `InputNode` como referência de "antes".
+- **2026-06-20:** Backend & Frontend: `AINode` aprimorado para checar a proximidade cromática contra todos os 4 cantos da imagem (ideal para gradientes) e controle interativo de tolerância (`AITolerance`) adicionado via slider (10 a 250) no painel de propriedades.
+- **2026-06-20:** Backend & WebSocket: Reescrita a engine de execução do DAG para que cada nó filtre suas entradas estritamente a partir das saídas de seus pais (`NodeOutputs`), em vez de compartilhar um buffer global. Isso isola completamente ramificações paralelas do grafo (consertando o bug de imagens flipadas aparecendo em nós paralelos de IA).
+- **2026-06-20:** Backend & Frontend: Codificação de visualizações (thumbnails) alterada para PNG no backend, permitindo suporte completo a transparência (alpha-channel) na remoção de fundo por IA. OutputNode agora também salva os arquivos resultantes como PNG.
+- **2026-06-20:** Frontend: Adicionado `draggable={false}` e `pointerEvents: 'none'` nas imagens do `CompareSlider` para evitar que a ação de arrastar a barra divisória ative o arrasto nativo de imagem do navegador.
+- **2026-06-20:** Core: Desenvolvido o sistema dinâmico de múltiplos fluxos em abas no estilo planilhas do Excel localizadas na parte inferior do canvas. Integração completa via WebSocket com SQLite no backend (`foto-facil.db`), permitindo carregar, salvar, criar e excluir fluxos de maneira totalmente persistente à reinicialização do servidor.
+- **2026-06-20:** Frontend: Implementado botão de alternar tema (Modo Claro / Modo Escuro) no cabeçalho superior (ativo no modo escuro por padrão), adaptando todas as cores da interface e do canvas do React Flow de forma reativa.
+- **2026-06-20:** Infra: Atualizado `.vscode/tasks.json` com scripts para compilação multiplataforma (Linux e Windows) do backend e frontend.

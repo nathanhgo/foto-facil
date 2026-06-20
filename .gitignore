@@ -1,2 +1,36 @@
-architecture-docs/
-architecture-docs/*
+# Dependency directories
+node_modules/
+frontend/node_modules/
+
+# Build outputs
+dist/
+dist-electron/
+frontend/dist/
+frontend/dist-electron/
+frontend/out/
+
+# Database files
+*.db
+backend/foto-facil.db
+foto-facil.db
+
+# Generated processed outputs
+backend/output/
+output/
+
+# Executables
+*.exe
+*.dll
+*.dylib
+*.so
+backend/server
+dist-bin/
+
+# Environment variables
+.env
+frontend/.env
+backend/.env
+
+# OS files
+.DS_Store
+Thumbs.db
