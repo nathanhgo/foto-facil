@@ -1,0 +1,13 @@
+---
+description: Convenções do frontend React/Electron
+globs: frontend/**/*.ts,frontend/**/*.tsx
+alwaysApply: false
+---
+
+# Frontend React/Electron
+
+- Novo nó de backend precisa de contraparte no frontend: entrada em `LIBRARY_NODES` (barra lateral) + suporte no `PropertiesPanel` (inputs específicos: sliders, selects, etc.) em `frontend/src/App.tsx`.
+- `App.tsx` é hoje monolítico (~1093 linhas). Ao adicionar funcionalidade não trivial, prefira extrair um componente novo em `frontend/src/components/` em vez de crescer ainda mais o arquivo único.
+- Não hardcode cores (ex.: `#9b51e0`) — use o objeto de tema existente para suportar dark/light mode.
+- Comunicação com o backend é via WebSocket (`ws://localhost:8080/ws`), com ações `RUN_FLOW`, `SAVE_FLOW`, `LOAD_FLOWS`, `DELETE_FLOW` — não introduza um novo canal de comunicação sem necessidade.
+- Diálogos nativos (abrir arquivo/pasta) passam pelo IPC do Electron (`electron/main.ts` + `preload.ts` com `contextBridge`), nunca acesse `fs` diretamente do processo de renderização.

@@ -1,0 +1,12 @@
+---
+description: Convenção de commits Git para o FotoFácil
+alwaysApply: false
+---
+
+# Commits
+
+Quando solicitado a fazer commit:
+
+- Mensagens em **inglês**, curtas e descritivas, seguindo Conventional Commits: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`.
+- Prefira commits pequenos e focados em vez de um único commit grande cobrindo múltiplas features (padrão observado no histórico: `feat: phase 1 implementation with multi-flows, cgo-free sqlite, and node renaming`).
+- Nunca faça commit de `.env`, `foto-facil.db` ou artefatos de build — já cobertos pelo `.gitignore`.

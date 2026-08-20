@@ -34,3 +34,6 @@ backend/.env
 # OS files
 .DS_Store
 Thumbs.db
+
+# Documentação de arquitetura/planejamento pessoal (contexto para IA, não faz parte do produto)
+architecture-docs/

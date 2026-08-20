@@ -1,0 +1,20 @@
+---
+description: Registrar toda mudança de código em architecture-docs/logs.md
+alwaysApply: true
+---
+
+# Log de alterações
+
+Para **qualquer edição de código** feita nesta sessão (novo nó, correção de bug, refatoração, mudança de UI, etc.), adicione uma entrada em [architecture-docs/logs.md](../../architecture-docs/logs.md) ao final do arquivo, no formato:
+
+```
+- **YYYY-MM-DD:** <descrição direta e técnica do que foi feito, em pt-br>.
+```
+
+Regras:
+
+- Use a data real da sessão (não invente).
+- Seja direto e técnico — este arquivo é lido principalmente por IAs em sessões futuras para saber o que já foi feito, não precisa ser bonito.
+- Uma entrada pode agrupar várias mudanças relacionadas de uma mesma tarefa (não precisa de uma linha por arquivo alterado).
+- Não é necessário logar mudanças puramente de documentação em `architecture-docs/` que não sejam a própria `logs.md` sendo mantida — mas mudanças de código (backend/frontend) sempre devem ser logadas, mesmo pequenas.
+- Se a mudança também alterar o status de algum item em `architecture-docs/mvp.md` (ex.: nó que passou de `[ ]` para `[x]`), atualize o checkbox correspondente na mesma tarefa.

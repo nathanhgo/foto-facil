@@ -9,8 +9,11 @@ import {
   addEdge,
   BackgroundVariant,
   ReactFlowProvider,
+  SelectionMode,
 } from '@xyflow/react';
 import type { Connection, Edge, Node, OnSelectionChangeParams } from '@xyflow/react';
+import { getBackendWebSocketUrl } from './core/websocketUrl';
+import { CATEGORIES, LIBRARY_NODES, getNodeColor, getNodeDocs } from './core/nodeCatalog';
 
 declare global {
   interface Window {
@@ -24,38 +27,8 @@ declare global {
 let idCounter = 0;
 const getId = () => `dndnode_${idCounter++}_${Date.now()}`;
 
-const NODE_COLORS_DARK: Record<string, string> = {
-  'Image Input':           '#0d2233',
-  'Brightness & Contrast': '#1f1a00',
-  'Color Space':           '#0d1f0d',
-  'Crop/Resize':           '#1f0d1f',
-  'Rotate/Flip':           '#0d1f1f',
-  'Image Output':          '#1a0d2e',
-  'Comparação Visual':     '#1a1a0d',
-  'IA/Machine Learning':   '#2e0d1a',
-};
-
-const NODE_COLORS_LIGHT: Record<string, string> = {
-  'Image Input':           '#E0F2FE', // azul claro
-  'Brightness & Contrast': '#FEF9C3', // amarelo claro
-  'Color Space':           '#DCFCE7', // verde claro
-  'Crop/Resize':           '#F3E8FF', // roxo claro
-  'Rotate/Flip':           '#E0F7FA', // ciano claro
-  'Image Output':          '#F3E8FF', // roxo claro
-  'Comparação Visual':     '#FEF9C3', // amarelo claro
-  'IA/Machine Learning':   '#FCE7F3', // rosa claro
-};
-
-const LIBRARY_NODES = [
-  { label: 'Image Input',           category: 'Input/Output' },
-  { label: 'Image Output',          category: 'Input/Output' },
-  { label: 'Brightness & Contrast', category: 'Ajustes' },
-  { label: 'Color Space',           category: 'Ajustes' },
-  { label: 'Crop/Resize',           category: 'Transformação' },
-  { label: 'Rotate/Flip',           category: 'Transformação' },
-  { label: 'Comparação Visual',     category: 'Visualização' },
-  { label: 'IA/Machine Learning',   category: 'Inteligência Artificial' },
-];
+// Cores, categorias e documentação de cada nó agora vivem em `src/core/nodeCatalog.ts`
+// (import LIBRARY_NODES, getNodeColor, getCategory, getNodeDocs acima).
 
 // ---------- CompareSlider ----------
 function CompareSlider({ thumbnail }: { thumbnail: string }) {
@@ -192,19 +165,33 @@ function CompareSlider({ thumbnail }: { thumbnail: string }) {
 // ---------- PropertiesPanel ----------
 function PropertiesPanel({
   selectedNode,
+  selectedCount,
   setNodes,
-  setSelectedNode,
   edges,
   triggerPreview,
   theme,
 }: {
   selectedNode: Node | null;
+  selectedCount: number;
   setNodes: any;
-  setSelectedNode: any;
   edges: Edge[];
   triggerPreview: (nodes: Node[], edges: Edge[]) => void;
   theme: any;
 }) {
+  if (selectedCount > 1) {
+    return (
+      <div style={{ padding: '16px' }}>
+        <h3 style={{ color: '#666', fontSize: '11px', fontWeight: 700, letterSpacing: '1px', margin: 0 }}>PROPERTIES</h3>
+        <div style={{ backgroundColor: theme.cardBg, padding: '14px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, marginTop: '12px' }}>
+          <p style={{ fontSize: '13px', fontWeight: 600, margin: '0 0 8px 0', color: theme.textColor }}>{selectedCount} nós selecionados</p>
+          <p style={{ fontSize: '11px', color: '#888', margin: 0, lineHeight: 1.5 }}>
+            Ctrl+C / Ctrl+V para copiar, Delete/Backspace para excluir todos os nós selecionados.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (!selectedNode) {
     return (
       <div style={{ padding: '16px' }}>
@@ -220,7 +207,8 @@ function PropertiesPanel({
       triggerPreview(updatedNodes, edges);
       return updatedNodes;
     });
-    setSelectedNode((n: Node | null) => n ? { ...n, data: { ...n.data, ...updates } } : null);
+    // `selectedNode` é derivado de `nodes` + `selectedIds` no componente pai,
+    // então já reflete a atualização automaticamente no próximo render.
   };
 
   const nodeType = selectedNode.data?.originalType as string;
@@ -362,6 +350,284 @@ function PropertiesPanel({
           </>
         )}
 
+        {nodeType === 'Detecção de Mudanças' && (
+          <PropSection label={`Limiar de Mudança (${(selectedNode.data?.changeThreshold as number) ?? 30})`}>
+            <input type="range" min="1" max="255"
+              value={(selectedNode.data?.changeThreshold as number) ?? 30}
+              onChange={(e) => updateNodeData({ changeThreshold: parseInt(e.target.value) })}
+              style={{ width: '100%', accentColor: '#9b51e0' }}
+            />
+            <p style={{ fontSize: '11px', color: '#888', margin: '4px 0 0 0' }}>
+              Conecte duas entradas (antes/depois) — ex.: duas passagens de satélite sobre a mesma área.
+            </p>
+          </PropSection>
+        )}
+
+        {nodeType === 'Empilhamento de Imagens' && (
+          <PropSection label="Empilhamento (Stacking)">
+            <p style={{ fontSize: '11px', color: '#888', margin: 0 }}>
+              Conecte 2+ entradas do mesmo cenário; a saída é a média por pixel (reduz ruído).
+            </p>
+          </PropSection>
+        )}
+
+        {nodeType === 'Registro de Imagens' && (
+          <PropSection label={`Busca máx. de deslocamento (${(selectedNode.data?.maxShift as number) ?? 10}px)`}>
+            <input type="range" min="1" max="30"
+              value={(selectedNode.data?.maxShift as number) ?? 10}
+              onChange={(e) => updateNodeData({ maxShift: parseInt(e.target.value) })}
+              style={{ width: '100%', accentColor: '#9b51e0' }}
+            />
+            <p style={{ fontSize: '11px', color: '#888', margin: '4px 0 0 0' }}>
+              Entrada 1 = referência, Entrada 2 = imagem a alinhar.
+            </p>
+          </PropSection>
+        )}
+
+        {nodeType === 'Composição de Bandas' && (
+          <PropSection label="Composição Falso-Cor">
+            <p style={{ fontSize: '11px', color: '#888', margin: 0 }}>
+              Conecte 3 entradas (bandas) → mapeadas para R, G e B.
+            </p>
+          </PropSection>
+        )}
+
+        {nodeType === 'Álgebra de Bandas (NDVI)' && (
+          <PropSection label="Operação">
+            <select
+              value={(selectedNode.data?.bandMathOperation as string) ?? 'normalized_difference'}
+              onChange={(e) => updateNodeData({ bandMathOperation: e.target.value })}
+              style={selectStyle}
+            >
+              <option value="normalized_difference">Diferença Normalizada (estilo NDVI)</option>
+              <option value="difference">Diferença Simples</option>
+              <option value="sum">Soma</option>
+            </select>
+            <p style={{ fontSize: '11px', color: '#888', margin: '4px 0 0 0' }}>
+              Entrada 1 = banda A, Entrada 2 = banda B.
+            </p>
+          </PropSection>
+        )}
+
+        {nodeType === 'Pan-sharpening' && (
+          <PropSection label="Fusão Pancromática">
+            <p style={{ fontSize: '11px', color: '#888', margin: 0 }}>
+              Entrada 1 = imagem colorida (baixa resolução), Entrada 2 = pancromática (alta resolução).
+            </p>
+          </PropSection>
+        )}
+
+        {nodeType === 'Convolução' && (
+          <>
+            <PropSection label="Tamanho do Kernel">
+              <NumberInput label="N (NxN)" value={(selectedNode.data?.kernelSize as number) ?? 3} onChange={(v) => updateNodeData({ kernelSize: v })} theme={theme} />
+            </PropSection>
+            <PropSection label="Kernel (valores separados por vírgula)">
+              <input
+                type="text"
+                value={(selectedNode.data?.kernel as string) ?? '0,0,0,0,1,0,0,0,0'}
+                onChange={(e) => updateNodeData({ kernel: e.target.value })}
+                placeholder="0,0,0,0,1,0,0,0,0"
+                style={selectStyle}
+              />
+            </PropSection>
+          </>
+        )}
+
+        {nodeType === 'Matriz de Pixels' && (
+          <PropSection label="Região a Exibir">
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <NumberInput label="X" value={(selectedNode.data?.regionX as number) ?? 0} onChange={(v) => updateNodeData({ regionX: v })} theme={theme} />
+              <NumberInput label="Y" value={(selectedNode.data?.regionY as number) ?? 0} onChange={(v) => updateNodeData({ regionY: v })} theme={theme} />
+              <NumberInput label="Tamanho" value={(selectedNode.data?.regionSize as number) ?? 8} onChange={(v) => updateNodeData({ regionSize: v })} theme={theme} />
+            </div>
+          </PropSection>
+        )}
+
+        {nodeType === 'Detecção de Bordas' && (
+          <PropSection label="Método">
+            <select
+              value={(selectedNode.data?.edgeMethod as string) ?? 'sobel'}
+              onChange={(e) => updateNodeData({ edgeMethod: e.target.value })}
+              style={selectStyle}
+            >
+              <option value="sobel">Sobel (gradiente)</option>
+              <option value="laplacian">Laplaciano</option>
+            </select>
+          </PropSection>
+        )}
+
+        {nodeType === 'Operações Morfológicas' && (
+          <>
+            <PropSection label="Operação">
+              <select
+                value={(selectedNode.data?.morphOperation as string) ?? 'erosion'}
+                onChange={(e) => updateNodeData({ morphOperation: e.target.value })}
+                style={selectStyle}
+              >
+                <option value="erosion">Erosão</option>
+                <option value="dilation">Dilatação</option>
+                <option value="opening">Abertura</option>
+                <option value="closing">Fechamento</option>
+              </select>
+            </PropSection>
+            <PropSection label="Elemento Estruturante">
+              <NumberInput label="N (NxN)" value={(selectedNode.data?.kernelSize as number) ?? 3} onChange={(v) => updateNodeData({ kernelSize: v })} theme={theme} />
+            </PropSection>
+          </>
+        )}
+
+        {nodeType === 'Blur/Suavização' && (
+          <>
+            <PropSection label="Método">
+              <select
+                value={(selectedNode.data?.blurMethod as string) ?? 'gaussian'}
+                onChange={(e) => updateNodeData({ blurMethod: e.target.value })}
+                style={selectStyle}
+              >
+                <option value="gaussian">Gaussiano</option>
+                <option value="mean">Média</option>
+                <option value="median">Mediana</option>
+              </select>
+            </PropSection>
+            <PropSection label="Tamanho do Kernel">
+              <NumberInput label="N (NxN)" value={(selectedNode.data?.kernelSize as number) ?? 3} onChange={(v) => updateNodeData({ kernelSize: v })} theme={theme} />
+            </PropSection>
+          </>
+        )}
+
+        {nodeType === 'Ruído' && (
+          <>
+            <PropSection label="Tipo">
+              <select
+                value={(selectedNode.data?.noiseType as string) ?? 'gaussian'}
+                onChange={(e) => updateNodeData({ noiseType: e.target.value })}
+                style={selectStyle}
+              >
+                <option value="gaussian">Gaussiano</option>
+                <option value="salt_pepper">Sal e Pimenta</option>
+                <option value="speckle">Speckle</option>
+              </select>
+            </PropSection>
+            <PropSection label={`Intensidade (${(selectedNode.data?.noiseAmount as number) ?? 20})`}>
+              <input type="range" min="1" max="100"
+                value={(selectedNode.data?.noiseAmount as number) ?? 20}
+                onChange={(e) => updateNodeData({ noiseAmount: parseInt(e.target.value) })}
+                style={{ width: '100%', accentColor: '#9b51e0' }}
+              />
+            </PropSection>
+          </>
+        )}
+
+        {nodeType === 'Limiarização' && (
+          <>
+            <PropSection label="Método">
+              <select
+                value={(selectedNode.data?.thresholdMethod as string) ?? 'global'}
+                onChange={(e) => updateNodeData({ thresholdMethod: e.target.value })}
+                style={selectStyle}
+              >
+                <option value="global">Global (manual)</option>
+                <option value="otsu">Otsu (automático)</option>
+              </select>
+            </PropSection>
+            {((selectedNode.data?.thresholdMethod as string) ?? 'global') === 'global' && (
+              <PropSection label={`Corte (${(selectedNode.data?.thresholdValue as number) ?? 128})`}>
+                <input type="range" min="1" max="255"
+                  value={(selectedNode.data?.thresholdValue as number) ?? 128}
+                  onChange={(e) => updateNodeData({ thresholdValue: parseInt(e.target.value) })}
+                  style={{ width: '100%', accentColor: '#9b51e0' }}
+                />
+              </PropSection>
+            )}
+          </>
+        )}
+
+        {nodeType === 'FFT' && (
+          <>
+            <PropSection label="Modo">
+              <select
+                value={(selectedNode.data?.fftMode as string) ?? 'spectrum'}
+                onChange={(e) => updateNodeData({ fftMode: e.target.value })}
+                style={selectStyle}
+              >
+                <option value="spectrum">Espectro de Magnitude</option>
+                <option value="filter">Filtro em Frequência</option>
+              </select>
+            </PropSection>
+            {((selectedNode.data?.fftMode as string) ?? 'spectrum') === 'filter' && (
+              <>
+                <PropSection label="Filtro">
+                  <select
+                    value={(selectedNode.data?.fftFilter as string) ?? 'lowpass'}
+                    onChange={(e) => updateNodeData({ fftFilter: e.target.value })}
+                    style={selectStyle}
+                  >
+                    <option value="lowpass">Passa-Baixa</option>
+                    <option value="highpass">Passa-Alta</option>
+                  </select>
+                </PropSection>
+                <PropSection label={`Corte (${((selectedNode.data?.cutoffRatio as number) ?? 0.2).toFixed(2)})`}>
+                  <input type="range" min="0.05" max="0.95" step="0.05"
+                    value={(selectedNode.data?.cutoffRatio as number) ?? 0.2}
+                    onChange={(e) => updateNodeData({ cutoffRatio: parseFloat(e.target.value) })}
+                    style={{ width: '100%', accentColor: '#9b51e0' }}
+                  />
+                </PropSection>
+              </>
+            )}
+          </>
+        )}
+
+        {nodeType === 'Normalização' && (
+          <PropSection label="Método">
+            <select
+              value={(selectedNode.data?.normalizationMethod as string) ?? 'minmax'}
+              onChange={(e) => updateNodeData({ normalizationMethod: e.target.value })}
+              style={selectStyle}
+            >
+              <option value="minmax">Min-Max (0-255)</option>
+              <option value="zscore">Z-Score (±3σ)</option>
+            </select>
+          </PropSection>
+        )}
+
+        {nodeType === 'Augmentação de Dados' && (
+          <PropSection label="Seed (reprodutibilidade)">
+            <NumberInput label="Seed" value={(selectedNode.data?.augmentationSeed as number) ?? 42} onChange={(v) => updateNodeData({ augmentationSeed: v })} theme={theme} />
+          </PropSection>
+        )}
+
+        {nodeType === 'Exportação Rotulada' && (
+          <>
+            <PropSection label="Pasta de Saída">
+              {(selectedNode.data?.outputDir as string) && (
+                <p style={{ fontSize: '11px', color: '#9b51e0', margin: '0 0 6px 0', wordBreak: 'break-all' }}>
+                  {selectedNode.data.outputDir as string}
+                </p>
+              )}
+              <ActionButton label="Selecionar Pasta..." onClick={async () => {
+                if (window.electronAPI) {
+                  const dir = await window.electronAPI.openDirectoryDialog();
+                  if (dir) updateNodeData({ outputDir: dir });
+                }
+              }} />
+            </PropSection>
+            <PropSection label="Divisão Train/Val/Test">
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <NumberInput label="Train %" value={Math.round(((selectedNode.data?.trainRatio as number) ?? 0.7) * 100)} onChange={(v) => updateNodeData({ trainRatio: v / 100 })} theme={theme} />
+                <NumberInput label="Val %" value={Math.round(((selectedNode.data?.valRatio as number) ?? 0.15) * 100)} onChange={(v) => updateNodeData({ valRatio: v / 100 })} theme={theme} />
+              </div>
+            </PropSection>
+          </>
+        )}
+
+        {(nodeType === 'Histograma' || nodeType === 'Equalização de Histograma' || nodeType === 'Estatísticas da Imagem') && (
+          <PropSection label="Sem parâmetros">
+            <p style={{ fontSize: '11px', color: '#888', margin: 0 }}>Este nó processa a imagem automaticamente, sem configuração adicional.</p>
+          </PropSection>
+        )}
+
         {nodeType === 'Comparação Visual' && thumb && (
           <CompareSlider thumbnail={thumb} />
         )}
@@ -372,7 +638,54 @@ function PropertiesPanel({
               style={{ width: '100%', borderRadius: '4px', border: '1px solid #444', display: 'block', pointerEvents: 'none', userSelect: 'none' }} />
           </PropSection>
         )}
+
+        <NodeDocsSection nodeType={nodeType} theme={theme} />
       </div>
+    </div>
+  );
+}
+
+// ---------- NodeDocsSection ----------
+function NodeDocsSection({ nodeType, theme }: { nodeType: string; theme: any }) {
+  const docs = getNodeDocs(nodeType);
+  const [open, setOpen] = useState(false);
+  if (!docs) return null;
+
+  return (
+    <div style={{ marginTop: '4px', borderTop: `1px solid ${theme.cardBorder}`, paddingTop: '10px' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          padding: 0,
+          color: '#888',
+          fontSize: '11px',
+          fontWeight: 700,
+          letterSpacing: '0.5px',
+          textTransform: 'uppercase',
+        }}
+      >
+        <span>Sobre este nó</span>
+        <span style={{ fontSize: '12px' }}>{open ? '▾' : '▸'}</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div>
+            <p style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 3px 0' }}>Explicação técnica</p>
+            <p style={{ fontSize: '12px', color: theme.textColor, margin: 0, lineHeight: 1.5 }}>{docs.technical}</p>
+          </div>
+          <div>
+            <p style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', margin: '0 0 3px 0' }}>Efeito esperado</p>
+            <p style={{ fontSize: '12px', color: theme.textColor, margin: 0, lineHeight: 1.5 }}>{docs.effect}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -432,8 +745,33 @@ function Flow() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+
+  // Selection state — guardamos apenas os IDs selecionados e derivamos os nós
+  // sempre a partir do estado bruto `nodes` (nunca de `displayNodes`, que envolve
+  // o label em JSX para permitir renomear inline — gravar isso de volta no estado
+  // via copiar/colar corrompia o nó e quebrava a renderização da tela toda).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectedNodes = nodes.filter((n) => selectedIds.has(n.id));
+  const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+  const clipboardRef = useRef<Node[]>([]);
+
+  // Resizable side panels (sidebar de nós / propriedades)
+  const [leftWidth, setLeftWidth] = useState<number>(200);
+  const [rightWidth, setRightWidth] = useState<number>(270);
+  const [resizingPanel, setResizingPanel] = useState<'left' | 'right' | null>(null);
+
+  // ---------- Undo/Redo (Ctrl+Z / Ctrl+Y) ----------
+  // Histórico simples de snapshots de nodes/edges, "assentado" após 500ms de
+  // inatividade (evita empilhar um passo de undo por frame durante um arraste).
+  const historyRef = useRef<{ past: Array<{ nodes: Node[]; edges: Edge[] }>; future: Array<{ nodes: Node[]; edges: Edge[] }> }>({ past: [], future: [] });
+  const committedStateRef = useRef<{ nodes: Node[]; edges: Edge[] }>({ nodes: [], edges: [] });
+  const skipHistoryRef = useRef(false);
+  const historyDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Contador que só existe para forçar um re-render quando o histórico muda,
+  // já que mutações em `historyRef.current` (um ref) não disparam re-render sozinhas.
+  const [, setHistoryVersion] = useState(0);
+  const bumpHistoryVersion = useCallback(() => setHistoryVersion((v) => v + 1), []);
 
   // Node editing state
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -502,6 +840,137 @@ function Flow() {
     inputBorder: darkMode ? '#444' : '#94A3B8',
   };
 
+  // ---------- Painéis redimensionáveis ----------
+  // Arraste nos divisores entre sidebar/canvas e canvas/propriedades para
+  // aumentar ou diminuir a largura de cada área.
+  const LEFT_MIN = 160, LEFT_MAX = 420, RIGHT_MIN = 220, RIGHT_MAX = 480;
+
+  const startResizing = useCallback((panel: 'left' | 'right') => (e: React.MouseEvent) => {
+    e.preventDefault();
+    setResizingPanel(panel);
+  }, []);
+
+  useEffect(() => {
+    if (!resizingPanel) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (resizingPanel === 'left') {
+        setLeftWidth(Math.min(LEFT_MAX, Math.max(LEFT_MIN, e.clientX)));
+      } else {
+        setRightWidth(Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, window.innerWidth - e.clientX)));
+      }
+    };
+    const handleMouseUp = () => setResizingPanel(null);
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingPanel]);
+
+  // ---------- Desfazer/Refazer (Ctrl+Z / Ctrl+Y) ----------
+  // Se houver um commit de histórico pendente (dentro da janela de debounce de
+  // 500ms), assenta ele imediatamente antes de desfazer/refazer — senão o undo
+  // "pularia" o passo mais recente, que ainda não tinha sido empilhado.
+  const flushPendingHistory = useCallback(() => {
+    if (!historyDebounceRef.current) return;
+    clearTimeout(historyDebounceRef.current);
+    historyDebounceRef.current = null;
+    historyRef.current.past.push(committedStateRef.current);
+    if (historyRef.current.past.length > 100) historyRef.current.past.shift();
+    historyRef.current.future = [];
+    committedStateRef.current = { nodes, edges };
+  }, [nodes, edges]);
+
+  const handleUndo = useCallback(() => {
+    flushPendingHistory();
+    const { past } = historyRef.current;
+    if (past.length === 0) return;
+    const previous = past.pop()!;
+    historyRef.current.future.push({ nodes, edges });
+    skipHistoryRef.current = true;
+    setNodes(previous.nodes);
+    setEdges(previous.edges);
+    setSelectedIds(new Set());
+    bumpHistoryVersion();
+  }, [nodes, edges, setNodes, setEdges, bumpHistoryVersion, flushPendingHistory]);
+
+  const handleRedo = useCallback(() => {
+    flushPendingHistory();
+    const { future } = historyRef.current;
+    if (future.length === 0) return;
+    const next = future.pop()!;
+    historyRef.current.past.push({ nodes, edges });
+    skipHistoryRef.current = true;
+    setNodes(next.nodes);
+    setEdges(next.edges);
+    setSelectedIds(new Set());
+    bumpHistoryVersion();
+  }, [nodes, edges, setNodes, setEdges, bumpHistoryVersion, flushPendingHistory]);
+
+  // Assenta um snapshot no histórico 500ms após a última mudança de nodes/edges
+  // (evita um passo de undo por frame durante um arraste ou por tecla digitada).
+  useEffect(() => {
+    if (skipHistoryRef.current) {
+      skipHistoryRef.current = false;
+      committedStateRef.current = { nodes, edges };
+      return;
+    }
+    const baseline = committedStateRef.current;
+    if (historyDebounceRef.current) clearTimeout(historyDebounceRef.current);
+    historyDebounceRef.current = setTimeout(() => {
+      historyRef.current.past.push(baseline);
+      if (historyRef.current.past.length > 100) historyRef.current.past.shift();
+      historyRef.current.future = [];
+      committedStateRef.current = { nodes, edges };
+      bumpHistoryVersion();
+    }, 500);
+  }, [nodes, edges, bumpHistoryVersion]);
+
+  // ---------- Copiar/colar nós (Ctrl+C / Ctrl+V) e Desfazer/Refazer (Ctrl+Z / Ctrl+Y) ----------
+  useEffect(() => {
+    const isEditableTarget = (el: EventTarget | null) => {
+      if (!(el instanceof HTMLElement)) return false;
+      return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || isEditableTarget(e.target)) return;
+
+      if (e.key === 'c' || e.key === 'C') {
+        if (selectedNodes.length > 0) {
+          clipboardRef.current = selectedNodes;
+        }
+      } else if (e.key === 'v' || e.key === 'V') {
+        if (clipboardRef.current.length === 0) return;
+        e.preventDefault();
+        const offset = 40;
+        const pasted = clipboardRef.current.map((n) => ({
+          ...n,
+          id: getId(),
+          selected: true,
+          position: { x: n.position.x + offset, y: n.position.y + offset },
+          data: { ...n.data, thumbnail: undefined },
+        }));
+        setNodes((nds) => nds.map((n) => ({ ...n, selected: false })).concat(pasted));
+        setSelectedIds(new Set(pasted.map((n) => n.id)));
+        clipboardRef.current = pasted;
+      } else if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault();
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
+      } else if (e.key === 'y' || e.key === 'Y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodes, setNodes, handleUndo, handleRedo]);
+
   // Helper to send flow state to save and preview
   const triggerSaveAndPreview = useCallback((latestNodes: Node[], latestEdges: Edge[]) => {
     if (debounceSavePreviewRef.current) clearTimeout(debounceSavePreviewRef.current);
@@ -532,7 +1001,7 @@ function Flow() {
   // WebSocket connection & initial loading
   useEffect(() => {
     function connect() {
-      const ws = new WebSocket('ws://localhost:8080/ws');
+      const ws = new WebSocket(getBackendWebSocketUrl());
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -582,6 +1051,9 @@ function Flow() {
               }));
             }
           } else if (response.thumbnails) {
+            // Atualização de preview vinda do backend — não é uma edição do
+            // usuário, não deve virar um passo de undo.
+            skipHistoryRef.current = true;
             setNodes((nds) =>
               nds.map((n) => {
                 const thumb = response.thumbnails[n.id];
@@ -611,21 +1083,25 @@ function Flow() {
   useEffect(() => {
     const active = flows.find((f) => f.id === activeFlowId);
     if (active) {
+      // Troca de fluxo não deve virar um passo de "desfazer" nem herdar o
+      // histórico do fluxo anterior.
+      skipHistoryRef.current = true;
+      historyRef.current = { past: [], future: [] };
       setNodes(active.nodes || []);
       setEdges(active.edges || []);
-      setSelectedNode(null);
+      setSelectedIds(new Set());
     }
   }, [activeFlowId]);
 
   // Update node styles dynamically when darkMode changes
   useEffect(() => {
+    // Alternar tema é só cosmético — não deve virar um passo de undo.
+    skipHistoryRef.current = true;
     setNodes((nds) =>
       nds.map((n) => {
-        const label = n.data?.label as string;
+        const label = (n.data?.originalType as string) ?? (n.data?.label as string);
         if (!label) return n;
-        const bgColor = darkMode
-          ? (NODE_COLORS_DARK[label] || '#1E1E1E')
-          : (NODE_COLORS_LIGHT[label] || '#FFFFFF');
+        const bgColor = getNodeColor(label, darkMode);
         const textColor = darkMode ? '#E0E0E0' : '#0F172A';
         const borderColor = darkMode ? '#444' : '#CBD5E1';
         return {
@@ -658,7 +1134,7 @@ function Flow() {
   }, [nodes, edges, activeFlowId, triggerSaveAndPreview]);
 
   const onSelectionChange = useCallback(({ nodes: sel }: OnSelectionChangeParams) => {
-    setSelectedNode(sel.length > 0 ? sel[0] : null);
+    setSelectedIds(new Set(sel.map((n) => n.id)));
   }, []);
 
   const onConnect = useCallback(
@@ -688,7 +1164,7 @@ function Flow() {
     if (!label || !reactFlowInstance) return;
     const position = reactFlowInstance.screenToFlowPosition({ x: e.clientX, y: e.clientY });
     
-    const bgColor = darkMode ? (NODE_COLORS_DARK[label] || '#1E1E1E') : (NODE_COLORS_LIGHT[label] || '#FFFFFF');
+    const bgColor = getNodeColor(label, darkMode);
     const textColor = darkMode ? '#E0E0E0' : '#0F172A';
     const borderColor = darkMode ? '#444' : '#CBD5E1';
 
@@ -748,14 +1224,17 @@ function Flow() {
     if (menu.type === 'node') {
       setNodes((nds) => nds.filter((n) => n.id !== menu.id));
       setEdges((eds) => eds.filter((e) => e.source !== menu.id && e.target !== menu.id));
-      if (selectedNode?.id === menu.id) {
-        setSelectedNode(null);
-      }
+      setSelectedIds((prev) => {
+        if (!prev.has(menu.id)) return prev;
+        const next = new Set(prev);
+        next.delete(menu.id);
+        return next;
+      });
     } else {
       setEdges((eds) => eds.filter((e) => e.id !== menu.id));
     }
     setMenu(null);
-  }, [menu, setNodes, setEdges, selectedNode]);
+  }, [menu, setNodes, setEdges]);
 
   const handleRunFlow = useCallback(() => {
     setRunStatus('running');
@@ -821,10 +1300,14 @@ function Flow() {
 
   const statusColor = { idle: '#9b51e0', running: '#f5a623', done: '#27ae60', error: '#e74c3c' };
   const statusLabel = { idle: 'Rodar Fluxo', running: 'Processando…', done: '✓ Concluído', error: '✗ Erro' };
-  const categories = [...new Set(LIBRARY_NODES.map((n) => n.category))];
+  // Ordem fixa das categorias (ver src/core/nodeCatalog.ts) — uma cor por categoria.
+  const categories = CATEGORIES.filter((c) => LIBRARY_NODES.some((n) => n.category === c.label));
 
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: theme.bgCanvas, color: theme.textColor, fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div
+      className={darkMode ? '' : 'theme-light'}
+      style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: theme.bgCanvas, color: theme.textColor, fontFamily: 'Inter, system-ui, sans-serif', cursor: resizingPanel ? 'col-resize' : undefined }}
+    >
       
       {/* Header */}
       <div style={{ height: '52px', backgroundColor: theme.bgHeader, borderBottom: `1px solid ${theme.borderColor}`, display: 'flex', alignItems: 'center', padding: '0 16px', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -833,6 +1316,45 @@ function Flow() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Undo/Redo */}
+          <div style={{ display: 'flex', gap: '2px' }}>
+            <button
+              onClick={handleUndo}
+              disabled={historyRef.current.past.length === 0}
+              title="Desfazer (Ctrl+Z)"
+              style={{
+                backgroundColor: darkMode ? '#222' : '#E2E8F0',
+                border: `1px solid ${theme.borderColor}`,
+                borderRadius: '6px 0 0 6px',
+                padding: '6px 10px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                color: theme.textColor,
+                opacity: historyRef.current.past.length === 0 ? 0.4 : 1,
+              }}
+            >
+              ↶
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={historyRef.current.future.length === 0}
+              title="Refazer (Ctrl+Y)"
+              style={{
+                backgroundColor: darkMode ? '#222' : '#E2E8F0',
+                border: `1px solid ${theme.borderColor}`,
+                borderLeft: 'none',
+                borderRadius: '0 6px 6px 0',
+                padding: '6px 10px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                color: theme.textColor,
+                opacity: historyRef.current.future.length === 0 ? 0.4 : 1,
+              }}
+            >
+              ↷
+            </button>
+          </div>
+
           {/* Dark Mode toggle */}
           <button
             onClick={() => setDarkMode(!darkMode)}
@@ -865,27 +1387,38 @@ function Flow() {
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         
         {/* Left sidebar */}
-        <div style={{ width: '200px', backgroundColor: theme.bgSidebar, borderRight: `1px solid ${theme.borderColor}`, padding: '12px', display: 'flex', flexDirection: 'column', gap: '16px', flexShrink: 0, overflowY: 'auto' }}>
-          {categories.map((cat) => (
-            <div key={cat}>
-              <p style={{ fontSize: '10px', color: '#888', fontWeight: 700, letterSpacing: '1px', marginBottom: '6px' }}>{cat.toUpperCase()}</p>
-              {LIBRARY_NODES.filter((n) => n.category === cat).map((n) => {
-                const bgColor = darkMode ? (NODE_COLORS_DARK[n.label] || '#1E1E1E') : (NODE_COLORS_LIGHT[n.label] || '#FFFFFF');
-                const textColor = darkMode ? '#CCC' : '#0F172A';
-                const borderColor = darkMode ? '#2A2A2A' : '#CBD5E1';
-                return (
-                  <div key={n.label} draggable onDragStart={(e) => onDragStart(e, n.label)}
-                    style={{ backgroundColor: bgColor, padding: '7px 10px', borderRadius: '5px', cursor: 'grab', fontSize: '13px', border: `1px solid ${borderColor}`, userSelect: 'none', color: textColor, marginBottom: '4px' }}>
-                    {n.label}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+        <div
+          className="discreet-scrollbar"
+          style={{ width: `${leftWidth}px`, backgroundColor: theme.bgSidebar, borderRight: `1px solid ${theme.borderColor}`, padding: '12px', display: 'flex', flexDirection: 'column', gap: '16px', flexShrink: 0, overflowY: 'auto' }}
+        >
+          {categories.map((cat) => {
+            const catAccent = cat.accent;
+            return (
+              <div key={cat.id}>
+                <p style={{ fontSize: '10px', color: catAccent, fontWeight: 700, letterSpacing: '1px', marginBottom: '6px' }}>{cat.label.toUpperCase()}</p>
+                {LIBRARY_NODES.filter((n) => n.category === cat.label).map((n) => {
+                  const bgColor = getNodeColor(n.label, darkMode);
+                  const textColor = darkMode ? '#CCC' : '#0F172A';
+                  return (
+                    <div key={n.label} draggable onDragStart={(e) => onDragStart(e, n.label)}
+                      style={{ backgroundColor: bgColor, padding: '7px 10px', borderRadius: '5px', cursor: 'grab', fontSize: '13px', borderLeft: `3px solid ${catAccent}`, userSelect: 'none', color: textColor, marginBottom: '4px' }}>
+                      {n.label}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
 
+        {/* Divisor: sidebar <-> canvas */}
+        <div
+          className={`resize-divider${resizingPanel === 'left' ? ' resizing' : ''}`}
+          onMouseDown={startResizing('left')}
+        />
+
         {/* Canvas Area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0 }}>
           <div style={{ flex: 1 }} ref={reactFlowWrapper}>
             <ReactFlow
               nodes={displayNodes}
@@ -902,6 +1435,10 @@ function Flow() {
               onNodeDoubleClick={(_event, node) => setEditingNodeId(node.id)}
               colorMode={darkMode ? 'dark' : 'light'}
               proOptions={{ hideAttribution: true }}
+              deleteKeyCode={['Backspace', 'Delete']}
+              selectionOnDrag
+              selectionMode={SelectionMode.Partial}
+              panOnDrag={[1, 2]}
               fitView
             >
               <Controls
@@ -1031,12 +1568,21 @@ function Flow() {
           </div>
         </div>
 
+        {/* Divisor: canvas <-> propriedades */}
+        <div
+          className={`resize-divider${resizingPanel === 'right' ? ' resizing' : ''}`}
+          onMouseDown={startResizing('right')}
+        />
+
         {/* Right Properties Panel */}
-        <div style={{ width: '270px', backgroundColor: theme.bgSidebar, borderLeft: `1px solid ${theme.borderColor}`, flexShrink: 0, overflowY: 'auto' }}>
+        <div
+          className="discreet-scrollbar"
+          style={{ width: `${rightWidth}px`, backgroundColor: theme.bgSidebar, borderLeft: `1px solid ${theme.borderColor}`, flexShrink: 0, overflowY: 'auto' }}
+        >
           <PropertiesPanel
             selectedNode={selectedNode}
+            selectedCount={selectedNodes.length}
             setNodes={setNodes}
-            setSelectedNode={setSelectedNode}
             edges={edges}
             triggerPreview={triggerSaveAndPreview}
             theme={theme}

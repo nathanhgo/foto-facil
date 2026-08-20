@@ -1,0 +1,26 @@
+---
+description: Contexto geral do projeto FotoFácil
+alwaysApply: true
+---
+
+# FotoFácil
+
+Editor de imagens baseado em nós (DAG) em Electron/React/TypeScript (frontend) + Go (backend), com foco em processamento digital de imagens (PDI) para uso leigo e acadêmico. O projeto será apresentado na WORCAP (INPE).
+
+Antes de trabalhar em qualquer feature, leia (se ainda não estiver em contexto):
+
+- [architecture-docs/idea.md](../../architecture-docs/idea.md) — visão do produto, público-alvo, requisitos
+- [architecture-docs/stack.md](../../architecture-docs/stack.md) — stack real vs. aspiracional (não confie em `general_architecture.md`/`idea.md` para o estado atual de implementação, sempre confira `stack.md`)
+- [architecture-docs/mvp.md](../../architecture-docs/mvp.md) — fases e status de cada feature/nó
+
+## Idioma
+
+- Código-fonte e comentários: **inglês**.
+- Documentos em `architecture-docs/` (incluindo `logs.md`): **pt-br**.
+- Textos visíveis na UI: pt-br (padrão já usado no projeto).
+
+## Regras gerais
+
+- Evite cores e valores hardcoded na UI — use o sistema de tema existente (roxo como accent color, dark/light mode).
+- Este é um projeto pessoal com apresentação acadêmica agendada (WORCAP); ao adicionar nós novos, priorize os listados na Fase 2 de `mvp.md` (PDI acadêmico) sobre features "consumer".
+- Nenhuma chave de API paga é necessária — processamento é 100% local/offline.

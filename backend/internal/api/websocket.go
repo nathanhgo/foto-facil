@@ -2,9 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"image"
 	"log"
 	"net/http"
-	"image"
+	"strconv"
 	"strings"
 
 	"foto-facil-backend/internal/dag"
@@ -16,7 +17,7 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 var Store *storage.SQLiteStore
 
@@ -44,6 +45,35 @@ type ReactFlowPayload struct {
 				DoFlip       bool   `json:"doFlip"`
 				AITool       string `json:"aiTool"`
 				AITolerance  int    `json:"aiTolerance"`
+
+				// Fase 2 — nós de sensoriamento remoto / espacial
+				ChangeThreshold int    `json:"changeThreshold"`
+				MaxShift        int    `json:"maxShift"`
+				BandMathOp      string `json:"bandMathOperation"`
+
+				// Fase 2 — nós clássicos de PDI acadêmico
+				KernelSize      int     `json:"kernelSize"`
+				Kernel          string  `json:"kernel"` // Floats separados por vírgula, ex: "0,1,0,1,-4,1,0,1,0"
+				RegionX         int     `json:"regionX"`
+				RegionY         int     `json:"regionY"`
+				RegionSize      int     `json:"regionSize"`
+				EdgeMethod      string  `json:"edgeMethod"`
+				MorphOperation  string  `json:"morphOperation"`
+				BlurMethod      string  `json:"blurMethod"`
+				NoiseType       string  `json:"noiseType"`
+				NoiseAmount     float64 `json:"noiseAmount"`
+				NoiseSeed       int64   `json:"noiseSeed"`
+				ThresholdMethod string  `json:"thresholdMethod"`
+				ThresholdValue  int     `json:"thresholdValue"`
+				FFTMode         string  `json:"fftMode"`
+				FFTFilter       string  `json:"fftFilter"`
+				CutoffRatio     float64 `json:"cutoffRatio"`
+
+				// Fase 2 — nós voltados a datasets/ML
+				NormalizationMethod string  `json:"normalizationMethod"`
+				AugmentationSeed    int64   `json:"augmentationSeed"`
+				TrainRatio          float64 `json:"trainRatio"`
+				ValRatio            float64 `json:"valRatio"`
 			} `json:"data"`
 		} `json:"nodes"`
 		Edges []struct {
@@ -174,7 +204,11 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			case "Brightness & Contrast":
 				instances[n.ID] = &nodes.BrightnessNode{ID: n.ID, Brightness: n.Data.Brightness}
 			case "Color Space":
-				instances[n.ID] = &nodes.GrayscaleNode{ID: n.ID}
+				mode := n.Data.ColorMode
+				if mode == "" {
+					mode = "grayscale"
+				}
+				instances[n.ID] = &nodes.ColorSpaceNode{ID: n.ID, Mode: mode}
 			case "Crop/Resize":
 				instances[n.ID] = &nodes.CropResizeNode{
 					ID:     n.ID,
@@ -205,6 +239,88 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 					ID:        n.ID,
 					Tool:      tool,
 					Tolerance: n.Data.AITolerance,
+				}
+
+			// --- Fase 2: sensoriamento remoto / espacial (foco WORCAP/INPE) ---
+			case "Detecção de Mudanças":
+				instances[n.ID] = &nodes.ChangeDetectionNode{ID: n.ID, Threshold: n.Data.ChangeThreshold}
+			case "Empilhamento de Imagens":
+				instances[n.ID] = &nodes.StackingNode{ID: n.ID}
+			case "Registro de Imagens":
+				instances[n.ID] = &nodes.RegistrationNode{ID: n.ID, MaxShift: n.Data.MaxShift}
+			case "Composição de Bandas":
+				instances[n.ID] = &nodes.BandCompositeNode{ID: n.ID}
+			case "Álgebra de Bandas (NDVI)":
+				instances[n.ID] = &nodes.BandMathNode{ID: n.ID, Operation: n.Data.BandMathOp}
+			case "Pan-sharpening":
+				instances[n.ID] = &nodes.PanSharpenNode{ID: n.ID}
+
+			// --- Fase 2: PDI acadêmico clássico ---
+			case "Convolução":
+				instances[n.ID] = &nodes.ConvolutionNode{
+					ID:         n.ID,
+					KernelSize: n.Data.KernelSize,
+					Kernel:     parseKernel(n.Data.Kernel),
+				}
+			case "Histograma":
+				instances[n.ID] = &nodes.HistogramNode{ID: n.ID}
+			case "Equalização de Histograma":
+				instances[n.ID] = &nodes.HistogramEqualizationNode{ID: n.ID}
+			case "Estatísticas da Imagem":
+				instances[n.ID] = &nodes.StatisticsNode{ID: n.ID}
+			case "Matriz de Pixels":
+				instances[n.ID] = &nodes.PixelMatrixNode{
+					ID:         n.ID,
+					RegionX:    n.Data.RegionX,
+					RegionY:    n.Data.RegionY,
+					RegionSize: n.Data.RegionSize,
+				}
+			case "Detecção de Bordas":
+				instances[n.ID] = &nodes.EdgeDetectionNode{ID: n.ID, Method: n.Data.EdgeMethod}
+			case "Operações Morfológicas":
+				instances[n.ID] = &nodes.MorphologyNode{
+					ID:         n.ID,
+					Operation:  n.Data.MorphOperation,
+					KernelSize: n.Data.KernelSize,
+				}
+			case "Blur/Suavização":
+				instances[n.ID] = &nodes.BlurNode{
+					ID:         n.ID,
+					Method:     n.Data.BlurMethod,
+					KernelSize: n.Data.KernelSize,
+				}
+			case "Ruído":
+				instances[n.ID] = &nodes.NoiseNode{
+					ID:     n.ID,
+					Type:   n.Data.NoiseType,
+					Amount: n.Data.NoiseAmount,
+					Seed:   n.Data.NoiseSeed,
+				}
+			case "Limiarização":
+				instances[n.ID] = &nodes.ThresholdNode{
+					ID:     n.ID,
+					Method: n.Data.ThresholdMethod,
+					Value:  n.Data.ThresholdValue,
+				}
+			case "FFT":
+				instances[n.ID] = &nodes.FFTNode{
+					ID:          n.ID,
+					Mode:        n.Data.FFTMode,
+					Filter:      n.Data.FFTFilter,
+					CutoffRatio: n.Data.CutoffRatio,
+				}
+
+			// --- Fase 2: preparo de dataset / ML ---
+			case "Normalização":
+				instances[n.ID] = &nodes.NormalizationNode{ID: n.ID, Method: n.Data.NormalizationMethod}
+			case "Augmentação de Dados":
+				instances[n.ID] = &nodes.AugmentationNode{ID: n.ID, Seed: n.Data.AugmentationSeed}
+			case "Exportação Rotulada":
+				instances[n.ID] = &nodes.LabeledExportNode{
+					ID:         n.ID,
+					OutputDir:  n.Data.OutputDir,
+					TrainRatio: n.Data.TrainRatio,
+					ValRatio:   n.Data.ValRatio,
 				}
 			}
 
@@ -270,4 +386,24 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 func sendJSON(conn *websocket.Conn, v any) {
 	data, _ := json.Marshal(v)
 	conn.WriteMessage(websocket.TextMessage, data)
+}
+
+// parseKernel converts a comma-separated string of floats (as sent by the
+// frontend's convolution kernel editor) into a []float64. Invalid or empty
+// input returns nil, letting ConvolutionNode fall back to its identity kernel.
+func parseKernel(raw string) []float64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]float64, 0, len(parts))
+	for _, p := range parts {
+		v, err := strconv.ParseFloat(strings.TrimSpace(p), 64)
+		if err != nil {
+			return nil
+		}
+		values = append(values, v)
+	}
+	return values
 }
