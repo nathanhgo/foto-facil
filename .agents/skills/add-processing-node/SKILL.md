@@ -29,7 +29,7 @@ Fluxo completo para implementar um nó novo do zero, seguindo TDD e mantendo a d
 6. **Atualizar documentação**:
    - Marque o item correspondente como `[x]` em `architecture-docs/mvp.md` e adicione a referência ao arquivo-fonte.
    - Adicione a entrada correspondente (técnico + efeito) em `architecture-docs/nodes-reference.md`, na categoria correta, espelhando o que foi colocado em `nodeCatalog.ts`.
-   - Adicione uma entrada em `architecture-docs/logs.md` descrevendo o que foi feito (ver `.cursor/rules/20-logging.mdc`).
+   - Adicione uma entrada em `architecture-docs/logs.md` descrevendo o que foi feito (ver `.agents/rules/20-logging.md`).
    - Se o nó for relevante para a demo da WORCAP, considere atualizar `architecture-docs/worcap.md`.
 
 7. **Validar**: rode `go test ./...` no backend uma última vez e teste manualmente o fluxo no Electron (`npm run dev` no frontend + `go run cmd/main.go` no backend) antes de considerar concluído.

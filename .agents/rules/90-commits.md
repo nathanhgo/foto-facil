@@ -1,8 +1,3 @@
----
-description: Convenção de commits Git para o FotoFácil
-alwaysApply: false
----
-
 # Commits
 
 Quando solicitado a fazer commit:

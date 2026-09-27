@@ -1,8 +1,3 @@
----
-description: Workflow de TDD obrigatório para features novas
-alwaysApply: true
----
-
 # TDD é obrigatório
 
 Toda feature nova (nó, endpoint, lógica de negócio) segue red-green-refactor:
@@ -19,7 +14,9 @@ Toda feature nova (nó, endpoint, lógica de negócio) segue red-green-refactor:
 
 ## Frontend (TypeScript/React)
 
-- Hoje não há framework de testes configurado (ver backlog em `mvp.md`). Se a tarefa envolver lógica testável isolável (parsing, validação, transformação de dados do grafo), sinalize a ausência de testes e sugira configurar Vitest antes de prosseguir, em vez de simplesmente pular a etapa de teste.
+- A suíte é o Vitest (`npm test` em `frontend/`); a cobertura ainda é pequena e não há testes de componentes React.
+- Se a tarefa envolver lógica testável isolável (parsing, validação, transformação de dados do grafo), escreva o teste antes. Se faltar infraestrutura para o que precisa ser testado, sinalize a lacuna e proponha o que configurar antes de prosseguir, em vez de simplesmente pular a etapa de teste.
+- Estado atual dos testes e da cobertura: `architecture-docs/stack.md`.
 
 ## Antes de finalizar
 

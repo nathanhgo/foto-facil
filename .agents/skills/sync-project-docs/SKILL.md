@@ -6,7 +6,6 @@ description: >-
   descrevem e o que está de fato implementado. Use quando o usuário pedir para
   sincronizar, auditar ou atualizar a documentação de arquitetura, ou quando
   suspeitar que os docs estão desatualizados em relação ao código.
-disable-model-invocation: true
 ---
 
 # Sincronizar documentação com o código real

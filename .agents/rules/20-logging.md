@@ -1,8 +1,3 @@
----
-description: Registrar toda mudança de código em architecture-docs/logs.md
-alwaysApply: true
----
-
 # Log de alterações
 
 Para **qualquer edição de código** feita nesta sessão (novo nó, correção de bug, refatoração, mudança de UI, etc.), adicione uma entrada em [architecture-docs/logs.md](../../architecture-docs/logs.md) ao final do arquivo, no formato:
