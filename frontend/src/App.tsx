@@ -14,6 +14,8 @@ import {
 import type { Connection, Edge, Node, OnSelectionChangeParams } from '@xyflow/react';
 import { getBackendWebSocketUrl } from './core/websocketUrl';
 import { createRunRequestId, resolveRunOutcome, RUN_CONNECTION_LOST } from './core/runFlowStatus';
+import { hasProcessingChanges } from './core/flowProcessing';
+import { COLOR_SPACE_MODES, resolveColorSpaceMode, applyColorSpaceMode } from './core/colorSpaceModes';
 import { CATEGORIES, LIBRARY_NODES, getNodeColor, getNodeDocs } from './core/nodeCatalog';
 
 declare global {
@@ -274,8 +276,14 @@ function PropertiesPanel({
 
         {nodeType === 'Color Space' && (
           <PropSection label="Modo">
-            <select value="grayscale" style={selectStyle} onChange={() => {}}>
-              <option value="grayscale">Grayscale</option>
+            <select
+              value={resolveColorSpaceMode(selectedNode.data)}
+              style={selectStyle}
+              onChange={(e) => updateNodeData(applyColorSpaceMode(selectedNode.data, e.target.value))}
+            >
+              {COLOR_SPACE_MODES.map((mode) => (
+                <option key={mode.value} value={mode.value}>{mode.label}</option>
+              ))}
             </select>
           </PropSection>
         )}
@@ -829,6 +837,10 @@ function Flow() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const debounceSavePreviewRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Intenção de re-executar o pipeline acumulada até o debounce disparar.
+  // Um arraste logo após uma troca de parâmetro (dentro dos 400ms) não pode
+  // cancelar o preview pendente — por isso a flag só é zerada ao enviar.
+  const pendingRunPreviewRef = useRef(false);
 
   // Theme object
   const theme = {
@@ -975,14 +987,19 @@ function Flow() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [selectedNodes, setNodes, handleUndo, handleRedo]);
 
-  // Helper to send flow state to save and preview
-  const triggerSaveAndPreview = useCallback((latestNodes: Node[], latestEdges: Edge[], runRequestId?: string) => {
+  // Helper to send flow state to save and preview.
+  // `runPreview` controla se, além de salvar o layout, o pipeline é re-executado.
+  // Mover/arrastar um nó só muda layout — deve salvar sem re-rodar o fluxo.
+  const triggerSaveAndPreview = useCallback((latestNodes: Node[], latestEdges: Edge[], runRequestId?: string, runPreview = true) => {
+    if (runPreview) pendingRunPreviewRef.current = true;
     if (debounceSavePreviewRef.current) clearTimeout(debounceSavePreviewRef.current);
     debounceSavePreviewRef.current = setTimeout(() => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
       const activeName = flows.find(f => f.id === activeFlowId)?.name || 'Flow';
+      const shouldRunPreview = pendingRunPreviewRef.current;
+      pendingRunPreviewRef.current = false;
 
       // 1. SAVE_FLOW
       ws.send(JSON.stringify({
@@ -996,7 +1013,7 @@ function Flow() {
       const hasInput = latestNodes.some(
         (n) => n.data?.originalType === 'Image Input' && (n.data?.filePaths as string)
       );
-      if (hasInput) {
+      if (shouldRunPreview && hasInput) {
         ws.send(JSON.stringify({ action: 'RUN_FLOW', requestId: runRequestId, flow: { nodes: latestNodes, edges: latestEdges } }));
       }
     }, 400);
@@ -1152,7 +1169,11 @@ function Flow() {
       setFlows((prev) =>
         prev.map((f) => (f.id === activeFlowId ? { ...f, nodes, edges } : f))
       );
-      triggerSaveAndPreview(nodes, edges);
+      // Salva sempre (a posição precisa ser persistida), mas só re-executa o
+      // pipeline quando algo que afeta o resultado mudou (parâmetro, aresta,
+      // nó novo/removido, imagem de entrada) — não em mero arraste de layout.
+      const shouldRun = hasProcessingChanges(active.nodes, active.edges, nodes, edges);
+      triggerSaveAndPreview(nodes, edges, undefined, shouldRun);
     }
   }, [nodes, edges, activeFlowId, triggerSaveAndPreview]);
 
