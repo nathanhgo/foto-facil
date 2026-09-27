@@ -1,0 +1,8 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    ".agents/rules/10-tdd-workflow.md",
+    ".agents/rules/20-logging.md",
+    ".agents/rules/90-commits.md"
+  ]
+}
