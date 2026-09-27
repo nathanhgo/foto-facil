@@ -13,6 +13,7 @@ import {
 } from '@xyflow/react';
 import type { Connection, Edge, Node, OnSelectionChangeParams } from '@xyflow/react';
 import { getBackendWebSocketUrl } from './core/websocketUrl';
+import { createRunRequestId, resolveRunOutcome, RUN_CONNECTION_LOST } from './core/runFlowStatus';
 import { CATEGORIES, LIBRARY_NODES, getNodeColor, getNodeDocs } from './core/nodeCatalog';
 
 declare global {
@@ -746,6 +747,9 @@ function Flow() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [runError, setRunError] = useState<string | null>(null);
+  // Id do RUN_FLOW disparado pelo botão e ainda sem resposta correlacionada.
+  const pendingRunRef = useRef<string | null>(null);
 
   // Selection state — guardamos apenas os IDs selecionados e derivamos os nós
   // sempre a partir do estado bruto `nodes` (nunca de `displayNodes`, que envolve
@@ -972,7 +976,7 @@ function Flow() {
   }, [selectedNodes, setNodes, handleUndo, handleRedo]);
 
   // Helper to send flow state to save and preview
-  const triggerSaveAndPreview = useCallback((latestNodes: Node[], latestEdges: Edge[]) => {
+  const triggerSaveAndPreview = useCallback((latestNodes: Node[], latestEdges: Edge[], runRequestId?: string) => {
     if (debounceSavePreviewRef.current) clearTimeout(debounceSavePreviewRef.current);
     debounceSavePreviewRef.current = setTimeout(() => {
       const ws = wsRef.current;
@@ -993,7 +997,7 @@ function Flow() {
         (n) => n.data?.originalType === 'Image Input' && (n.data?.filePaths as string)
       );
       if (hasInput) {
-        ws.send(JSON.stringify({ action: 'RUN_FLOW', flow: { nodes: latestNodes, edges: latestEdges } }));
+        ws.send(JSON.stringify({ action: 'RUN_FLOW', requestId: runRequestId, flow: { nodes: latestNodes, edges: latestEdges } }));
       }
     }, 400);
   }, [activeFlowId, flows]);
@@ -1050,7 +1054,9 @@ function Flow() {
                 flow: { nodes: [], edges: [] }
               }));
             }
-          } else if (response.thumbnails) {
+          }
+
+          if (response.thumbnails) {
             // Atualização de preview vinda do backend — não é uma edição do
             // usuário, não deve virar um passo de undo.
             skipHistoryRef.current = true;
@@ -1061,12 +1067,29 @@ function Flow() {
               })
             );
           }
+
+          // Resposta da execução pedida pelo botão "Rodar Fluxo": só a resposta
+          // com o id pendente encerra o pedido. Resposta de preview ou de outra
+          // execução não mexe no status.
+          const outcome = resolveRunOutcome(response, pendingRunRef.current);
+          if (outcome) {
+            pendingRunRef.current = null;
+            setRunError(outcome.status === 'error' ? outcome.message : null);
+            setRunStatus(outcome.status);
+          }
         } catch (err) {
           console.error('[WS] Error processing message:', err);
         }
       };
 
       ws.onclose = () => {
+        // Execução pendente sem backend: sem isto a UI ficaria em "Processando…"
+        // para sempre depois de uma queda de conexão.
+        if (pendingRunRef.current) {
+          pendingRunRef.current = null;
+          setRunError(RUN_CONNECTION_LOST);
+          setRunStatus('error');
+        }
         setTimeout(connect, 2000);
       };
       ws.onerror = () => {
@@ -1237,9 +1260,23 @@ function Flow() {
   }, [menu, setNodes, setEdges]);
 
   const handleRunFlow = useCallback(() => {
+    const hasInput = nodes.some(
+      (n) => n.data?.originalType === 'Image Input' && (n.data?.filePaths as string)
+    );
+    if (!hasInput) {
+      // Sem entrada não há o que processar: antes a UI marcava "Concluído" assim mesmo.
+      pendingRunRef.current = null;
+      setRunError('Adicione um nó "Image Input" com pelo menos uma imagem antes de rodar o fluxo.');
+      setRunStatus('error');
+      return;
+    }
+    // O id liga ESTE pedido à resposta dele: sem ele, uma resposta antiga (ou de
+    // preview) poderia marcar o pedido atual como concluído.
+    const requestId = createRunRequestId();
+    pendingRunRef.current = requestId;
+    setRunError(null);
     setRunStatus('running');
-    triggerSaveAndPreview(nodes, edges);
-    setTimeout(() => setRunStatus('done'), 1500);
+    triggerSaveAndPreview(nodes, edges, requestId);
   }, [nodes, edges, triggerSaveAndPreview]);
 
   // Tab operations
@@ -1380,6 +1417,12 @@ function Flow() {
             style={{ backgroundColor: statusColor[runStatus], color: '#fff', padding: '7px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, border: 'none', cursor: runStatus === 'running' ? 'wait' : 'pointer', transition: 'background-color 0.2s' }}>
             {statusLabel[runStatus]}
           </button>
+
+          {runError && (
+            <span title={runError} style={{ color: '#e74c3c', fontSize: '12px', maxWidth: '460px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {runError}
+            </span>
+          )}
         </div>
       </div>
 

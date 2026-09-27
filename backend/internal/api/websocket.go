@@ -22,10 +22,11 @@ var upgrader = websocket.Upgrader{
 var Store *storage.SQLiteStore
 
 type ReactFlowPayload struct {
-	Action string `json:"action"`
-	ID     string `json:"id,omitempty"`
-	Name   string `json:"name,omitempty"`
-	Flow   struct {
+	Action    string `json:"action"`
+	RequestID string `json:"requestId,omitempty"`
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Flow      struct {
 		Nodes []struct {
 			ID   string `json:"id"`
 			Data struct {
@@ -85,6 +86,7 @@ type ReactFlowPayload struct {
 
 type RunFlowResponse struct {
 	Status     string            `json:"status"`
+	RequestID  string            `json:"requestId,omitempty"`
 	Message    string            `json:"message,omitempty"`
 	Error      string            `json:"error,omitempty"`
 	Thumbnails map[string]string `json:"thumbnails,omitempty"`
@@ -180,13 +182,14 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		scheduler := dag.NewScheduler()
 		order, err := scheduler.Sort(dagNodes)
 		if err != nil {
-			sendJSON(conn, RunFlowResponse{Status: "error", Error: "Ciclo detectado no grafo"})
+			sendJSON(conn, RunFlowResponse{Status: "error", RequestID: payload.RequestID, Error: "Ciclo detectado no grafo"})
 			continue
 		}
 
 		// Instanciar nós processadores
 		instances := make(map[string]nodes.Node)
 		thumbNodes := make(map[string]*nodes.ThumbnailNode)
+		nodeTypes := make(map[string]string)
 
 		for _, n := range payload.Flow.Nodes {
 			switch n.Data.OriginalType {
@@ -324,6 +327,8 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			nodeTypes[n.ID] = n.Data.OriginalType
+
 			// Gerador de thumbnail para qualquer nó exceto Output
 			if n.Data.OriginalType != "Image Output" {
 				tn := &nodes.ThumbnailNode{ID: "thumb_" + n.ID, MaxWidth: 200, MaxHeight: 200}
@@ -341,7 +346,15 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		for _, id := range order {
 			node := instances[id]
 			if node == nil {
-				continue
+				// Tipo de nó desconhecido: antes era ignorado em silêncio, e a
+				// execução terminava como sucesso sem ter processado o nó.
+				sendJSON(conn, RunFlowResponse{
+					Status:    "error",
+					RequestID: payload.RequestID,
+					Error:     "Nó não suportado: " + nodeTypes[id] + " (id " + id + ")",
+				})
+				success = false
+				break
 			}
 
 			// Coletar imagens de entrada a partir das saídas dos nós pais diretos
@@ -357,7 +370,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 			if err := node.Process(ctx); err != nil {
 				log.Printf("Error in node %s: %v", id, err)
-				sendJSON(conn, RunFlowResponse{Status: "error", Error: "Erro no nó " + id + ": " + err.Error()})
+				sendJSON(conn, RunFlowResponse{Status: "error", RequestID: payload.RequestID, Error: "Erro no nó " + nodeTypes[id] + ": " + err.Error()})
 				success = false
 				break
 			}
@@ -376,6 +389,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if success {
 			sendJSON(conn, RunFlowResponse{
 				Status:     "success",
+				RequestID:  payload.RequestID,
 				Message:    "Imagens processadas com sucesso!",
 				Thumbnails: thumbnails,
 			})
