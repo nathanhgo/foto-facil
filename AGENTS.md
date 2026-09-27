@@ -14,6 +14,7 @@ Editor de imagens baseado em nós (DAG) em Electron/React/TypeScript (frontend) 
 | Trabalhar em UI, tema ou design | `architecture-docs/visual.md` |
 | Ver o histórico do que já foi feito (log de sessão) | `architecture-docs/logs.md` |
 | Adicionar/alterar nós de processamento | `architecture-docs/nodes-reference.md` |
+| Alterar o protocolo WebSocket / RUN_FLOW | `architecture-docs/websocket-protocol.md` |
 | Seguir o workflow de TDD | `.agents/rules/10-tdd-workflow.md` |
 | Saber que log/entrada adicionar após editar código | `.agents/rules/20-logging.md` |
 | Padrão de mensagens de commit | `.agents/rules/90-commits.md` |

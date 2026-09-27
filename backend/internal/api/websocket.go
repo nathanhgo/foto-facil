@@ -25,7 +25,11 @@ type ReactFlowPayload struct {
 	Action string `json:"action"`
 	ID     string `json:"id,omitempty"`
 	Name   string `json:"name,omitempty"`
-	Flow   struct {
+	// RequestID is echoed back verbatim on RUN_FLOW responses so the frontend
+	// can correlate a response with the request that produced it. Preview runs
+	// triggered by autosave omit it (see architecture-docs/websocket-protocol.md).
+	RequestID string `json:"requestId,omitempty"`
+	Flow      struct {
 		Nodes []struct {
 			ID   string `json:"id"`
 			Data struct {
@@ -84,6 +88,8 @@ type ReactFlowPayload struct {
 }
 
 type RunFlowResponse struct {
+	Action     string            `json:"action,omitempty"`
+	RequestID  string            `json:"requestId,omitempty"`
 	Status     string            `json:"status"`
 	Message    string            `json:"message,omitempty"`
 	Error      string            `json:"error,omitempty"`
@@ -180,7 +186,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		scheduler := dag.NewScheduler()
 		order, err := scheduler.Sort(dagNodes)
 		if err != nil {
-			sendJSON(conn, RunFlowResponse{Status: "error", Error: "Ciclo detectado no grafo"})
+			sendJSON(conn, RunFlowResponse{Action: "RUN_FLOW", RequestID: payload.RequestID, Status: "error", Error: "Ciclo detectado no grafo"})
 			continue
 		}
 
@@ -357,7 +363,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 			if err := node.Process(ctx); err != nil {
 				log.Printf("Error in node %s: %v", id, err)
-				sendJSON(conn, RunFlowResponse{Status: "error", Error: "Erro no nó " + id + ": " + err.Error()})
+				sendJSON(conn, RunFlowResponse{Action: "RUN_FLOW", RequestID: payload.RequestID, Status: "error", Error: "Erro no nó " + id + ": " + err.Error()})
 				success = false
 				break
 			}
@@ -375,6 +381,8 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		if success {
 			sendJSON(conn, RunFlowResponse{
+				Action:     "RUN_FLOW",
+				RequestID:  payload.RequestID,
 				Status:     "success",
 				Message:    "Imagens processadas com sucesso!",
 				Thumbnails: thumbnails,

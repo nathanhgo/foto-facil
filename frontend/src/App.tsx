@@ -13,6 +13,8 @@ import {
 } from '@xyflow/react';
 import type { Connection, Edge, Node, OnSelectionChangeParams } from '@xyflow/react';
 import { getBackendWebSocketUrl } from './core/websocketUrl';
+import { buildRunFlowMessage, createRunRequestId, isRunFlowResponseFor } from './core/runFlowProtocol';
+import type { BackendRunFlowResponse } from './core/runFlowProtocol';
 import { CATEGORIES, LIBRARY_NODES, getNodeColor, getNodeDocs } from './core/nodeCatalog';
 
 declare global {
@@ -746,6 +748,10 @@ function Flow() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [runStatus, setRunStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle');
+  const [runError, setRunError] = useState<string | null>(null);
+  // requestId do RUN_FLOW disparado pelo usuário. Só a resposta que ecoar este
+  // id pode mudar o runStatus (ver src/core/runFlowProtocol.ts).
+  const pendingRunRef = useRef<string | null>(null);
 
   // Selection state — guardamos apenas os IDs selecionados e derivamos os nós
   // sempre a partir do estado bruto `nodes` (nunca de `displayNodes`, que envolve
@@ -1013,7 +1019,19 @@ function Flow() {
       ws.onmessage = (event) => {
         try {
           const response = JSON.parse(event.data);
-          
+
+          const applyThumbnails = (thumbnails: Record<string, string>) => {
+            // Atualização de preview vinda do backend — não é uma edição do
+            // usuário, não deve virar um passo de undo.
+            skipHistoryRef.current = true;
+            setNodes((nds) =>
+              nds.map((n) => {
+                const thumb = thumbnails[n.id];
+                return thumb ? { ...n, data: { ...n.data, thumbnail: thumb } } : n;
+              })
+            );
+          };
+
           if (response.action === 'LOAD_FLOWS' && response.status === 'success') {
             const rawFlows = response.flows || [];
             const loaded = rawFlows.map((f: any) => {
@@ -1050,16 +1068,24 @@ function Flow() {
                 flow: { nodes: [], edges: [] }
               }));
             }
+          } else if (response.action === 'RUN_FLOW') {
+            const runResponse = response as BackendRunFlowResponse;
+            if (runResponse.thumbnails) applyThumbnails(runResponse.thumbnails);
+
+            // Só a resposta que ecoa o requestId do pedido pendente decide o
+            // runStatus — respostas fora de ordem ou de outro fluxo são ignoradas.
+            if (isRunFlowResponseFor(runResponse, pendingRunRef.current)) {
+              pendingRunRef.current = null;
+              if (runResponse.status === 'error') {
+                setRunError(runResponse.error || 'Falha ao executar o fluxo.');
+                setRunStatus('error');
+              } else {
+                setRunError(null);
+                setRunStatus('done');
+              }
+            }
           } else if (response.thumbnails) {
-            // Atualização de preview vinda do backend — não é uma edição do
-            // usuário, não deve virar um passo de undo.
-            skipHistoryRef.current = true;
-            setNodes((nds) =>
-              nds.map((n) => {
-                const thumb = response.thumbnails[n.id];
-                return thumb ? { ...n, data: { ...n.data, thumbnail: thumb } } : n;
-              })
-            );
+            applyThumbnails(response.thumbnails as Record<string, string>);
           }
         } catch (err) {
           console.error('[WS] Error processing message:', err);
@@ -1067,6 +1093,12 @@ function Flow() {
       };
 
       ws.onclose = () => {
+        // Conexão caiu com um RUN_FLOW pendente: não há como concluí-lo.
+        if (pendingRunRef.current) {
+          pendingRunRef.current = null;
+          setRunError('Conexão com o backend foi perdida.');
+          setRunStatus('error');
+        }
         setTimeout(connect, 2000);
       };
       ws.onerror = () => {
@@ -1237,10 +1269,30 @@ function Flow() {
   }, [menu, setNodes, setEdges]);
 
   const handleRunFlow = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setRunError('Sem conexão com o backend.');
+      setRunStatus('error');
+      return;
+    }
+
+    // Cancela autosave/preview pendente para não competir com esta rodada.
+    if (debounceSavePreviewRef.current) clearTimeout(debounceSavePreviewRef.current);
+
+    const requestId = createRunRequestId();
+    pendingRunRef.current = requestId;
+    setRunError(null);
     setRunStatus('running');
-    triggerSaveAndPreview(nodes, edges);
-    setTimeout(() => setRunStatus('done'), 1500);
-  }, [nodes, edges, triggerSaveAndPreview]);
+
+    const activeName = flows.find((f) => f.id === activeFlowId)?.name || 'Flow';
+    ws.send(JSON.stringify({
+      action: 'SAVE_FLOW',
+      id: activeFlowId,
+      name: activeName,
+      flow: { nodes, edges },
+    }));
+    ws.send(JSON.stringify(buildRunFlowMessage(requestId, nodes, edges)));
+  }, [nodes, edges, activeFlowId, flows]);
 
   // Tab operations
   const handleAddFlow = () => {
@@ -1377,9 +1429,15 @@ function Flow() {
           </button>
 
           <button onClick={handleRunFlow} disabled={runStatus === 'running'}
+            title={runStatus === 'error' && runError ? runError : undefined}
             style={{ backgroundColor: statusColor[runStatus], color: '#fff', padding: '7px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 600, border: 'none', cursor: runStatus === 'running' ? 'wait' : 'pointer', transition: 'background-color 0.2s' }}>
             {statusLabel[runStatus]}
           </button>
+          {runStatus === 'error' && runError && (
+            <span role="status" style={{ color: statusColor.error, fontSize: '12px', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {runError}
+            </span>
+          )}
         </div>
       </div>
 
